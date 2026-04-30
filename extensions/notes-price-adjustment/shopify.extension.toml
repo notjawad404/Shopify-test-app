@@ -1,0 +1,17 @@
+api_version = "2026-04"
+uid = "f783384e-cba6-a6ae-4eb7-924b36d965f2767b7fbf"
+
+[[extensions]]
+type = "function"
+name = "Notes Price Adjustment"
+handle = "notes-price-adjustment"
+
+[extensions.build]
+command = ""
+path = "dist/function.wasm"
+watch = [ "src/**/*.graphql", "src/**/*.js" ]
+
+[[extensions.targeting]]
+target = "cart.transform.run"
+input_query = "src/run.graphql"
+export = "cart-transform-run"

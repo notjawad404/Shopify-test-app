@@ -1,0 +1,7 @@
+api_version = "2026-07"
+uid = "cf0823c6-3e0a-99df-15a8-46670618eca63453b1fb"
+
+[[extensions]]
+name = "Product Notes"
+handle = "product-notes"
+type = "theme"

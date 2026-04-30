@@ -1,0 +1,27 @@
+query RunInput {
+  cart {
+    lines {
+      id
+      quantity
+      cost {
+        amountPerQuantity {
+          amount
+          currencyCode
+        }
+      }
+      merchandise {
+        ... on ProductVariant {
+          id
+          product {
+            notesPrice: metafield(namespace: "$app", key: "notes_price") {
+              value
+            }
+          }
+        }
+      }
+      notesAdded: attribute(key: "_notes_added") {
+        value
+      }
+    }
+  }
+}

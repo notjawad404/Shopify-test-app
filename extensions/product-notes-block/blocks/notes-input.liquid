@@ -1,0 +1,426 @@
+{% comment %}
+  Product Notes — Theme App Block
+  Renders a notes/message text field on the product page.
+  Shows the surcharge price when configured.
+  The note is submitted as a line item property and carries through
+  cart → checkout → order details automatically.
+  The Cart Transform function adjusts the price.
+{% endcomment %}
+
+{% assign notes_label = product.metafields.app.notes_label.value | default: block.settings.default_label %}
+{% assign property_name = block.settings.property_name | default: notes_label %}
+{% assign notes_price = product.metafields.app.notes_price.value %}
+{% assign has_price = false %}
+{% if notes_price and notes_price != "0" and notes_price != "0.0" and notes_price != "0.00" and notes_price != blank %}
+  {% assign has_price = true %}
+{% endif %}
+
+<div
+  class="product-notes"
+  id="product-notes-block"
+  style="
+    margin: {{ block.settings.top_spacing }}px 0 {{ block.settings.bottom_spacing }}px;
+    max-width: 100%;
+  "
+>
+  <label
+    for="product-note-input"
+    class="product-notes__label"
+    style="
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      color: {{ block.settings.label_color }};
+    "
+  >
+    <span>{{ notes_label }}</span>
+    {% if has_price %}
+      <span
+        class="product-notes__price-badge"
+        style="
+          display: inline-block;
+          padding: 2px 8px;
+          background: {{ block.settings.price_badge_bg }};
+          color: {{ block.settings.price_badge_color }};
+          border-radius: 12px;
+          font-size: 12px;
+          font-weight: 600;
+          line-height: 1.4;
+        "
+      >
+        +{{ notes_price | times: 100 | money }}
+      </span>
+    {% endif %}
+  </label>
+
+  {% if block.settings.show_description and block.settings.description != blank %}
+    <p
+      class="product-notes__description"
+      style="
+        margin: 0 0 8px;
+        font-size: 13px;
+        color: #6d7175;
+      "
+    >
+      {{ block.settings.description }}
+    </p>
+  {% endif %}
+
+  <textarea
+    id="product-note-input"
+    class="product-notes__input"
+    rows="{{ block.settings.rows }}"
+    maxlength="{{ block.settings.max_length }}"
+    placeholder="{{ block.settings.placeholder }}"
+    style="
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid {{ block.settings.border_color }};
+      border-radius: {{ block.settings.border_radius }}px;
+      font-family: inherit;
+      font-size: 14px;
+      line-height: 1.5;
+      resize: vertical;
+      box-sizing: border-box;
+      transition: border-color 0.2s ease;
+      background: {{ block.settings.bg_color }};
+      color: {{ block.settings.text_color }};
+    "
+  ></textarea>
+
+  {% if block.settings.show_char_count %}
+    <p
+      id="product-note-counter"
+      class="product-notes__counter"
+      style="
+        margin: 4px 0 0;
+        font-size: 12px;
+        color: #8c9196;
+        text-align: right;
+      "
+    >
+      0 / {{ block.settings.max_length }}
+    </p>
+  {% endif %}
+</div>
+
+<style>
+  .product-notes__input:focus {
+    outline: none;
+    border-color: {{ block.settings.focus_color }};
+    box-shadow: 0 0 0 2px {{ block.settings.focus_color }}33;
+  }
+</style>
+
+<script>
+  (function () {
+    var noteInput = document.getElementById('product-note-input');
+    if (!noteInput) return;
+
+    var propertyName = {{ property_name | json }};
+
+    // Character counter
+    {% if block.settings.show_char_count %}
+      var counter = document.getElementById('product-note-counter');
+      if (counter) {
+        noteInput.addEventListener('input', function () {
+          counter.textContent = noteInput.value.length + ' / {{ block.settings.max_length }}';
+        });
+      }
+    {% endif %}
+
+    // ── STRATEGY 1: Inject a persistent hidden input inside the product form ──
+    function findProductForm() {
+      var selectors = [
+        'form[action="/cart/add"]',
+        'form[action*="/cart/add"]',
+        'form.product-form',
+        'form[data-type="add-to-cart-form"]',
+        'form[id*="product-form"]',
+        'form[id*="ProductForm"]',
+        '.product-form form',
+        '.product form[method="post"]'
+      ];
+
+      for (var i = 0; i < selectors.length; i++) {
+        var form = document.querySelector(selectors[i]);
+        if (form) return form;
+      }
+
+      var section = noteInput.closest('.shopify-section, section, .product');
+      if (section) {
+        var form = section.querySelector('form');
+        if (form) return form;
+      }
+
+      return null;
+    }
+
+    var productForm = findProductForm();
+
+    if (productForm) {
+      // Hidden input for the note text (visible property)
+      var hiddenInput = document.createElement('input');
+      hiddenInput.type = 'hidden';
+      hiddenInput.name = 'properties[' + propertyName + ']';
+      hiddenInput.value = '';
+      hiddenInput.className = 'product-notes-hidden-input';
+      productForm.appendChild(hiddenInput);
+
+      // Hidden input to signal a note was added (for Cart Transform function)
+      var hiddenFlag = document.createElement('input');
+      hiddenFlag.type = 'hidden';
+      hiddenFlag.name = 'properties[_notes_added]';
+      hiddenFlag.value = '';
+      hiddenFlag.className = 'product-notes-hidden-flag';
+      productForm.appendChild(hiddenFlag);
+
+      // Sync on every keystroke
+      noteInput.addEventListener('input', function () {
+        hiddenInput.value = noteInput.value;
+        hiddenFlag.value = noteInput.value.trim() ? 'true' : '';
+      });
+
+      noteInput.addEventListener('change', function () {
+        hiddenInput.value = noteInput.value;
+        hiddenFlag.value = noteInput.value.trim() ? 'true' : '';
+      });
+
+      // Clean up empty values on submit
+      productForm.addEventListener('submit', function () {
+        if (!noteInput.value.trim()) {
+          hiddenInput.disabled = true;
+          hiddenFlag.disabled = true;
+        } else {
+          hiddenInput.disabled = false;
+          hiddenInput.value = noteInput.value.trim();
+          hiddenFlag.disabled = false;
+          hiddenFlag.value = 'true';
+        }
+      });
+    }
+
+    // ── STRATEGY 2: Intercept fetch() calls to /cart/add.js ──
+    var originalFetch = window.fetch;
+    window.fetch = function () {
+      var url = arguments[0];
+      var options = arguments[1] || {};
+      var urlStr = (typeof url === 'string') ? url : (url && url.url ? url.url : '');
+
+      if (urlStr.indexOf('/cart/add') > -1 && noteInput.value.trim()) {
+        var noteValue = noteInput.value.trim();
+
+        try {
+          if (options.body && typeof options.body === 'string') {
+            var body = JSON.parse(options.body);
+
+            if (!body.properties) body.properties = {};
+            body.properties[propertyName] = noteValue;
+            body.properties['_notes_added'] = 'true';
+
+            if (body.items && Array.isArray(body.items)) {
+              body.items.forEach(function (item) {
+                if (!item.properties) item.properties = {};
+                item.properties[propertyName] = noteValue;
+                item.properties['_notes_added'] = 'true';
+              });
+            }
+
+            arguments[1] = Object.assign({}, options, { body: JSON.stringify(body) });
+          }
+
+          if (options.body instanceof FormData) {
+            options.body.set('properties[' + propertyName + ']', noteValue);
+            options.body.set('properties[_notes_added]', 'true');
+          }
+        } catch (e) {
+          console.warn('Product Notes: Could not inject note into fetch request', e);
+        }
+      }
+
+      return originalFetch.apply(this, arguments);
+    };
+
+    // ── STRATEGY 3: Intercept XMLHttpRequest ──
+    var originalXHROpen = XMLHttpRequest.prototype.open;
+    var originalXHRSend = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.open = function () {
+      this._productNotesUrl = arguments[1] || '';
+      return originalXHROpen.apply(this, arguments);
+    };
+
+    XMLHttpRequest.prototype.send = function (body) {
+      if (this._productNotesUrl.indexOf('/cart/add') > -1 && noteInput.value.trim()) {
+        var noteValue = noteInput.value.trim();
+        try {
+          if (typeof body === 'string') {
+            var data = JSON.parse(body);
+            if (!data.properties) data.properties = {};
+            data.properties[propertyName] = noteValue;
+            data.properties['_notes_added'] = 'true';
+            if (data.items && Array.isArray(data.items)) {
+              data.items.forEach(function (item) {
+                if (!item.properties) item.properties = {};
+                item.properties[propertyName] = noteValue;
+                item.properties['_notes_added'] = 'true';
+              });
+            }
+            return originalXHRSend.call(this, JSON.stringify(data));
+          }
+        } catch (e) {
+          console.warn('Product Notes: Could not inject note into XHR request', e);
+        }
+      }
+      return originalXHRSend.call(this, body);
+    };
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "Product Notes",
+  "target": "section",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Content"
+    },
+    {
+      "type": "text",
+      "id": "default_label",
+      "label": "Label",
+      "default": "Add a note"
+    },
+    {
+      "type": "text",
+      "id": "property_name",
+      "label": "Cart property name",
+      "default": "Note",
+      "info": "The name shown in cart & checkout (e.g. 'Gift message', 'Note')"
+    },
+    {
+      "type": "text",
+      "id": "placeholder",
+      "label": "Placeholder text",
+      "default": "E.g. Gift message, special instructions..."
+    },
+    {
+      "type": "checkbox",
+      "id": "show_description",
+      "label": "Show description text",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "description",
+      "label": "Description",
+      "default": "This note will be included with your order."
+    },
+    {
+      "type": "header",
+      "content": "Input settings"
+    },
+    {
+      "type": "range",
+      "id": "rows",
+      "label": "Text area rows",
+      "min": 2,
+      "max": 8,
+      "step": 1,
+      "default": 3
+    },
+    {
+      "type": "range",
+      "id": "max_length",
+      "label": "Maximum characters",
+      "min": 50,
+      "max": 1000,
+      "step": 50,
+      "default": 250
+    },
+    {
+      "type": "checkbox",
+      "id": "show_char_count",
+      "label": "Show character counter",
+      "default": true
+    },
+    {
+      "type": "header",
+      "content": "Styling"
+    },
+    {
+      "type": "range",
+      "id": "top_spacing",
+      "label": "Top spacing (px)",
+      "min": 0,
+      "max": 40,
+      "step": 4,
+      "default": 16
+    },
+    {
+      "type": "range",
+      "id": "bottom_spacing",
+      "label": "Bottom spacing (px)",
+      "min": 0,
+      "max": 40,
+      "step": 4,
+      "default": 16
+    },
+    {
+      "type": "range",
+      "id": "border_radius",
+      "label": "Border radius (px)",
+      "min": 0,
+      "max": 16,
+      "step": 2,
+      "default": 8
+    },
+    {
+      "type": "color",
+      "id": "label_color",
+      "label": "Label color",
+      "default": "#202223"
+    },
+    {
+      "type": "color",
+      "id": "text_color",
+      "label": "Input text color",
+      "default": "#202223"
+    },
+    {
+      "type": "color",
+      "id": "bg_color",
+      "label": "Input background",
+      "default": "#ffffff"
+    },
+    {
+      "type": "color",
+      "id": "border_color",
+      "label": "Border color",
+      "default": "#c9cccf"
+    },
+    {
+      "type": "color",
+      "id": "focus_color",
+      "label": "Focus ring color",
+      "default": "#005bd3"
+    },
+    {
+      "type": "color",
+      "id": "price_badge_bg",
+      "label": "Price badge background",
+      "default": "#f0fdf4"
+    },
+    {
+      "type": "color",
+      "id": "price_badge_color",
+      "label": "Price badge text color",
+      "default": "#166534"
+    }
+  ]
+}
+{% endschema %}
